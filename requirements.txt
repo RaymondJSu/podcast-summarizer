@@ -1,0 +1,6 @@
+streamlit
+modal
+whisper
+openai
+python-dotenv
+requests

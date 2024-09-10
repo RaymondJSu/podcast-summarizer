@@ -29,19 +29,30 @@ def get_episode_audio_url(episode_id):
 
     return audio_url, thumbnail, podcast_title, episode_title
 
-audio_url, thumbnail, podcast_title, episode_title = get_episode_audio_url(episode_id)
-filename = "podcast_episode.mp3"
-folder_path = "./podcast"
-# Create the podcast folder if it doesn't exist
-if not os.path.exists(folder_path):
-    os.makedirs(folder_path)
-file_path = os.path.join(folder_path, filename)
+def main():
+    audio_url, thumbnail, podcast_title, episode_title = get_episode_audio_url(episode_id)
+    filename = "podcast_episode.mp3"
+    folder_path = "./podcast"
 
-response = requests.get(audio_url, stream=True)
-with open(file_path, 'wb') as file:
-    for chunk in response.iter_content(chunk_size=1024):
-        if chunk:
-            file.write(chunk)
+    # Create the podcast folder if it doesn't exist
+    if not os.path.exists(folder_path):
+        os.makedirs(folder_path)
+    file_path = os.path.join(folder_path, filename)
+
+    # Download the podcast episode as mp3
+    response = requests.get(audio_url, stream=True)
+    with open(file_path, 'wb') as file:
+        for chunk in response.iter_content(chunk_size=1024):
+            if chunk:
+                file.write(chunk)
+
+# will need to rewrite to def save_transcript(episode_id):
+if __name__ == '__main__':
+    main()
+
+
+
+
 
 
 
