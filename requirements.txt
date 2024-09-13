@@ -1,6 +1,8 @@
 streamlit
 modal
-whisper
 openai
 python-dotenv
 requests
+certify
+feedparser
+git+https://github.com/openai/whisper.git
