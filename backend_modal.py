@@ -179,8 +179,7 @@ def store_episode_data(episode_title, TLDROutput, SummaryOutput, publish_date):
     except Exception as e:
         print(e)
 
-@app.function(volumes={"/podcast-storage": volume})
-@app.schedule(cron="0 9,17 * * *")
+@app.function(volumes={"/podcast-storage": volume}, schedule=modal.Cron("0 9,17 * * *"))
 def main(podcast_feed_url = "https://www.spreaker.com/show/5725002/episodes/feed"):
 
     download_whisper_model.remote()
