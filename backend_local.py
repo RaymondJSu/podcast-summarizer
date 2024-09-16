@@ -12,9 +12,9 @@ import certifi
 from pathlib import Path
 
 load_dotenv()
-
+MONGO_USER = os.getenv('MONGO_USER')
 MONGODB_PWD = os.getenv('MONGODB_PWD')
-mongoDB_uri = f"mongodb+srv://raymondjsu:{MONGODB_PWD}@cluster0.uile4.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+mongoDB_uri = f"mongodb+srv://{MONGO_USER}:{MONGODB_PWD}@cluster0.uile4.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 API_KEY_chatGPT = os.getenv('API_KEY_chatGPT')
 
 client = OpenAI(
@@ -101,8 +101,6 @@ def store_episode_data(uri, title,TLDROutput, SummaryOutput, publish_date):
     print("Stored episode data in MongoDB")
 
 def ping():
-
-    mongoDB_uri = f"mongodb+srv://raymondjsu:{MONGODB_PWD}@cluster0.uile4.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 
     client = MongoClient(mongoDB_uri, server_api=ServerApi("1"))
     try:

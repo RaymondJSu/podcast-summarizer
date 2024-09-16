@@ -8,7 +8,7 @@ import urllib
 from pymongo import MongoClient
 from pymongo.server_api import ServerApi
 from pathlib import Path
-import time
+from datetime import datetime
 
 # Modal app setup
 app = modal.App(
@@ -170,6 +170,7 @@ def store_episode_data(episode_title, TLDROutput, SummaryOutput, publish_date):
         "publish_date": publish_date,
         "TLDR": TLDROutput,
         "summary": SummaryOutput,
+        "timestamp": datetime.datetime.now()
     }
 
     try:
