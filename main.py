@@ -3,7 +3,7 @@ from pymongo import MongoClient
 from pymongo.server_api import ServerApi
 
 MONGO_USER = st.secrets["MONGO_USER"]
-MONGO_PWD = st.secrets["MONGODB_PWD"]
+MONGO_PWD = st.secrets["MONGO_PWD"]
 print(MONGO_USER, MONGO_PWD)
 
 uri = f"mongodb+srv://{MONGO_USER}:{MONGO_PWD}@cluster0.uile4.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
