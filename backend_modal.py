@@ -84,8 +84,6 @@ def transcribe(audio_file_path):
     # Debugging: Print the absolute path
     print(f"Transcribing audio file from path: {audio_file_path}")
 
-    time.sleep(10)
-
     # Check folder contents for debug
     print("Contents of the folder:", os.listdir("/podcast-storage"))
     
@@ -115,23 +113,24 @@ def generate_summary(transcript):
     client = openai.Client(api_key=api_key)
 
     instructPrompt = """
-                follow a process that distills the following content into key bullet points, 
-                focusing on major news items, economic data, stock market reactions, and any additional insights provided. 
-                Here's a basic structure: 
-                1. identify the main topics. 
-                . Group related information. 
-                3. highlight key numbers and reactions. 
-                4. condense for clarity. 
-                5. maintain a logical flow. 
-                
-                Now please create a brief yet comprehensive summary that conveys the essential information:
+follow a process that distills the following content into key bullet points, 
+focusing on major news items, economic data, stock market reactions, and any additional insights provided. 
+Here's a basic structure:
+
+1. identify the main topics. 
+. Group related information. 
+3. highlight key numbers and reactions. 
+4. condense for clarity. 
+5. maintain a logical flow. 
+
+Now please create a brief yet comprehensive summary that conveys the essential information:
 """
     TLDRPrompt = """
-                please provide a TLDR version of the following transcript, 
-                please limit to 30 to 60 words, or about 1-3 sentences. 
-                The goal is to provide a quick, high-level overview that captures the essence of the content. 
-                
-                Here's the transcript:
+please provide a TLDR version of the following transcript, 
+please limit to 30 to 60 words, or about 1-3 sentences. 
+The goal is to provide a quick, high-level overview that captures the essence of the content. 
+
+Here's the transcript:
 """
 
     prompt = TLDRPrompt + transcript
@@ -179,29 +178,10 @@ def store_episode_data(episode_title, TLDROutput, SummaryOutput, publish_date):
     except Exception as e:
         print(e)
 
-@app.function(secrets=[modal.Secret.from_name("my-mongodb-secret")])
-def ping():
-
-    print("ping...")
-
-    user = urllib.parse.quote_plus(os.environ["MONGO_USER"])
-    password = urllib.parse.quote_plus(os.environ["MONGO_PASSWORD"])
-    host = urllib.parse.quote_plus(os.environ["MONGO_HOST"])
-
-    uri = "mongodb+srv://%s:%s@cluster0.uile4.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0" % (user, password)
-
-    client = MongoClient(uri, server_api=ServerApi("1"))
-    try:
-        client.admin.command("ping")
-        print("Pinged your deployment. You successfully connected to MongoDB!")
-    except Exception as e:
-        print(e)
-
 @app.function(volumes={"/podcast-storage": volume})
 @app.schedule(cron="0 9,17 * * *")
 def main(podcast_feed_url = "https://www.spreaker.com/show/5725002/episodes/feed"):
 
-    # First, download the Whisper model (if needed)
     download_whisper_model.remote()
     volume.reload()
     
@@ -209,17 +189,10 @@ def main(podcast_feed_url = "https://www.spreaker.com/show/5725002/episodes/feed
     volume.reload()
 
     transcript = transcribe.remote(episode_file_path)
-    if not transcript:
-        print("Transcription failed!")
-        return
     
     TLDROutput, SummaryOutput = generate_summary.remote(transcript)
     
     store_episode_data.remote(episode_title, TLDROutput, SummaryOutput, publish_date)
 
-    # Delete the audio file
-    # if os.path.exists(episode_file_path):
-    #     os.remove(episode_file_path)
-    #     print(f"Deleted file: {episode_file_path}")
-    # else:
-    #     print(f"File not found: {episode_file_path}")
+    volume.remove_file(episode_file_path)
+    volume.reload()

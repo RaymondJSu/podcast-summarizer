@@ -2,7 +2,10 @@
 transcribe podcast audio, extract key bullet point, and generate summarize for you!
 
 
-
+### run the app
+```
+modal run app.py::main
+```
 
 #### Mongo DB issues
 Should you ran into issues when connecting mongo db with python, try 

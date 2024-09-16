@@ -13,7 +13,6 @@ from pathlib import Path
 
 load_dotenv()
 
-X_ListenAPI_Key = os.getenv('X_ListenAPI_Key')
 MONGODB_PWD = os.getenv('MONGODB_PWD')
 mongoDB_uri = f"mongodb+srv://raymondjsu:{MONGODB_PWD}@cluster0.uile4.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 API_KEY_chatGPT = os.getenv('API_KEY_chatGPT')
@@ -26,50 +25,46 @@ podcast_feed_url = "https://www.spreaker.com/show/5725002/episodes/feed"
 
 
 def get_episode_audio_url(podcast_feed_url):
-    # url = listennotes_episode_endpoint + '/' + episode_id
-    # response = requests.request('GET', url, headers=headers_listennotes)
 
-    # data = response.json()
-
-    # episode_title = data['title']
-    # thumbnail = data['thumbnail']
-    # podcast_title = data['podcast']['title']
-    # audio_url = data['audio']
     podcast_feed = feedparser.parse(requests.get(podcast_feed_url, headers={'User-Agent': 'Mozilla/5.0'}).content)
     episode_title = podcast_feed.entries[0].title
     publish_date = podcast_feed.entries[0].published
     audio_url = podcast_feed.entries[0].links[1].href
 
-    print(f"Audio URL: {audio_url}")
-
     return audio_url, episode_title, publish_date
 
 def transcribe(audio_data):
+
+    print("Transcribing podcast episode...")
+
     model = whisper.load_model("base.en")
     transcript = model.transcribe(audio_data, fp16=False)
 
-    print(transcript["text"][:100])
+    print("Transcription complete!")
 
     return transcript["text"]
 
 def generate_summary(transcript):
+
+    print("Generating summary...")
+
     instructPrompt = """
-                follow a process that distills the following content into key bullet points, focusing on major news items, economic data, stock market reactions, and any additional insights provided. 
-                Here's a basic structure: 
-                1. identify the main topics. 
-                2. Group related information. 
-                3. highlight key numbers and reactions. 
-                4. condense for clarity. 
-                5. maintain a logical flow. 
-                
-                Now please create a brief yet comprehensive summary that conveys the essential information:
+follow a process that distills the following content into key bullet points, focusing on major news items, economic data, stock market reactions, and any additional insights provided. 
+Here's a basic structure: 
+1. identify the main topics. 
+2. Group related information. 
+3. highlight key numbers and reactions. 
+4. condense for clarity. 
+5. maintain a logical flow. 
+
+Now please create a brief yet comprehensive summary that conveys the essential information:
 """
     TLDRPrompt = """
-                please provide a TLDR version of the following transcript, 
-                please limit to 30 to 60 words, or about 1-3 sentences. 
-                The goal is to provide a quick, high-level overview that captures the essence of the content. 
-                
-                Here's the transcript:
+please provide a TLDR version of the following transcript, 
+please limit to 30 to 60 words, or about 1-3 sentences. 
+The goal is to provide a quick, high-level overview that captures the essence of the content. 
+
+Here's the transcript:
 """
 
     prompt = TLDRPrompt + transcript
@@ -86,6 +81,8 @@ def generate_summary(transcript):
                                             )
     TLDROutput = TLDROutput.choices[0].message.content
     SummaryOutput = SummaryOutput.choices[0].message.content
+
+    print("Summary complete!")
 
     return TLDROutput, SummaryOutput
 
@@ -133,21 +130,18 @@ def main():
                 f.write(chunk)
 
     print(f"Downloaded episode to: {episode_path}")
-    print("Transcribing podcast episode...")
+    
     transcript = transcribe(episode_path)
-    print("Transcription complete!")
-    # print("Generating summary...")
-    # # TLDROutput, SummaryOutput = generate_summary(transcript)
-    # print("Summary complete!")
-    # store_episode_data(mongoDB_uri, episode_title, TLDROutput, SummaryOutput, publish_date)
+    TLDROutput, SummaryOutput = generate_summary(transcript)
+    store_episode_data(mongoDB_uri, episode_title, TLDROutput, SummaryOutput, publish_date)
+    
     # Delete the audio file
-    # if os.path.exists(file_path):
-    #     os.remove(file_path)
-    #     print(f"Deleted file: {file_path}")
-    # else:
-    #     print(f"File not found: {file_path}")
+    if os.path.exists(episode_path):
+        os.remove(episode_path)
+        print(f"Deleted file: {episode_path}")
+    else:
+        print(f"File not found: {episode_path}")
 
-# will need to rewrite to def save_transcript(episode_id):
 if __name__ == '__main__':
     main()
     
