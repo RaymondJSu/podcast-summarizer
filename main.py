@@ -1,27 +1,99 @@
 import streamlit as st
 from pymongo import MongoClient
+from pymongo.server_api import ServerApi
 import os
 import certifi
+from dotenv import load_dotenv
 
+load_dotenv()
+
+MONGO_USER = os.getenv('MONGO_USER')
 MONGODB_PWD = os.getenv('MONGODB_PWD')
-url = f"mongodb+srv://raymondjsu:{MONGODB_PWD}@cluster0.uile4.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+uri = f"mongodb+srv://{MONGO_USER}:{MONGODB_PWD}@cluster0.uile4.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 
+def ping():
+    client = MongoClient(uri, tlsCAFile=certifi.where())
+    print("start pinging")
+    try:
+        client.admin.command("ping")
+        print("Pinged your deployment. You successfully connected to MongoDB!")
+    except Exception as e:
+        print(e)
+    
+client = MongoClient(uri, server_api=ServerApi("1"))
+db = client.podcast_summarizer
+episodes = db.episodes
 
-def fetch_episodes():
-    client = MongoClient(url, tlsCAFile=certifi.where())
-    db = client.podcast_summarizer
-    episodes = db.episodes.find().sort("timestamp", -1)
-    return episodes
+# ping()
+
+# Streamlit App
+st.set_page_config(page_title="News Digest ", layout="wide")
 
 st.title("Podcast Summarizer")
-episodes = fetch_episodes()
-for episode in episodes:
-    st.header(episode['title'])
-    st.subheader(episode['timestamp'])
-    st.write(episode['summary'])
 
-markdown_string = """
+# Fetch episode data from MongoDB
+episode_data = list(episodes.find().sort("publish_date", -1))
 
-"""
 
-st.markdown(markdown_string)
+# CSS for centering and responsive design
+st.markdown("""
+    <style>
+        body {
+            background-color: white;
+            color: black;
+        }
+        .container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+        .episode {
+            max-width: 800px;
+            width: 100%;
+            padding: 15px;
+            background-color: white;
+            color: black;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        .centered-content {
+            text-align: center;
+        }
+        @media (max-width: 768px) {
+            .episode {
+                padding: 10px;
+            }
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+
+# Main layout
+st.markdown('<div class="container">', unsafe_allow_html=True)
+
+
+for episode in episode_data:
+    title = episode["title"]
+    publish_date = episode["publish_date"][:-5]
+    TLDR = episode["TLDR"]
+    summary = episode["summary"]
+
+
+    # Display episode information
+    st.markdown(f'<div class="episode centered-content">', unsafe_allow_html=True)
+    
+    st.markdown(f'<h1>{title}</h1>', unsafe_allow_html=True)
+    st.markdown(f'<p>Published on: {publish_date}</p>', unsafe_allow_html=True)
+    st.markdown(f'<p>{TLDR}</p>', unsafe_allow_html=True)  # Display TLDR as short summary
+    
+    st.markdown('<div style="text-align: left;">', unsafe_allow_html=True)
+    with st.expander("Read More"):
+        st.markdown(f'<p>{summary}</p>', unsafe_allow_html=True)  # Full summary shown when expanded
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+st.markdown('</div>', unsafe_allow_html=True)
