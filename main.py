@@ -1,30 +1,14 @@
 import streamlit as st
 from pymongo import MongoClient
 from pymongo.server_api import ServerApi
-import os
-import certifi
-from dotenv import load_dotenv
 
-load_dotenv()
-
-MONGO_USER = os.getenv('MONGO_USER')
-MONGODB_PWD = os.getenv('MONGODB_PWD')
+MONGO_USER = st.secrets["MONGO_USER"]
+MONGODB_PWD = st.secrets["MONGODB_PWD"]
 uri = f"mongodb+srv://{MONGO_USER}:{MONGODB_PWD}@cluster0.uile4.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
-
-def ping():
-    client = MongoClient(uri, tlsCAFile=certifi.where())
-    print("start pinging")
-    try:
-        client.admin.command("ping")
-        print("Pinged your deployment. You successfully connected to MongoDB!")
-    except Exception as e:
-        print(e)
     
 client = MongoClient(uri, server_api=ServerApi("1"))
 db = client.podcast_summarizer
 episodes = db.episodes
-
-# ping()
 
 # Streamlit App
 st.set_page_config(page_title="News Digest ", layout="wide")
