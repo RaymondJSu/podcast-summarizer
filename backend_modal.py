@@ -113,25 +113,25 @@ def generate_summary(transcript):
     client = openai.Client(api_key=api_key)
 
     instructPrompt = """
-follow a process that distills the following content into key bullet points, 
-focusing on major news items, economic data, stock market reactions, and any additional insights provided. 
-Here's a basic structure:
+    follow a process that distills the following content into key bullet points, 
+    focusing on major news items, economic data, stock market reactions, and any additional insights provided. 
+    Here's a basic structure:
 
-1. identify the main topics. 
-. Group related information. 
-3. highlight key numbers and reactions. 
-4. condense for clarity. 
-5. maintain a logical flow. 
+    1. identify the main topics. 
+    . Group related information. 
+    3. highlight key numbers and reactions. 
+    4. condense for clarity. 
+    5. maintain a logical flow. 
 
-Now please create a brief yet comprehensive summary that conveys the essential information:
-"""
+    Now please create a brief yet comprehensive summary that conveys the essential information:
+    """
     TLDRPrompt = """
-please provide a TLDR version of the following transcript, 
-please limit to 30 to 60 words, or about 1-3 sentences. 
-The goal is to provide a quick, high-level overview that captures the essence of the content. 
+    please provide a TLDR version of the following transcript, 
+    please limit to 30 to 60 words, or about 1-3 sentences. 
+    The goal is to provide a quick, high-level overview that captures the essence of the content. 
 
-Here's the transcript:
-"""
+    Here's the transcript:
+    """
 
     prompt = TLDRPrompt + transcript
     TLDROutput = client.chat.completions.create(model="gpt-3.5-turbo",
