@@ -7,6 +7,15 @@ transcribe podcast audio, extract key bullet point, and generate summarize for y
 modal run app.py::main
 ```
 
+### requirement
+openai
+python-dotenv
+requests
+certify
+feedparser
+git+https://github.com/openai/whisper.git
+
+
 #### Mongo DB issues
 Should you ran into issues when connecting mongo db with python, try 
 ```
