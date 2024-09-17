@@ -5,3 +5,4 @@ venv/
 /dist
 node_modules/
 podcast/
+**/__pycache__
