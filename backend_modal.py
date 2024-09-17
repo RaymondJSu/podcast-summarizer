@@ -8,7 +8,7 @@ import urllib
 from pymongo import MongoClient
 from pymongo.server_api import ServerApi
 from pathlib import Path
-from datetime import datetime
+import datetime
 
 # Modal app setup
 app = modal.App(
@@ -179,7 +179,16 @@ def store_episode_data(episode_title, TLDROutput, SummaryOutput, publish_date):
     except Exception as e:
         print(e)
 
-@app.function(volumes={"/podcast-storage": volume}, schedule=modal.Cron("0 9,17 * * *"))
+@app.function(volumes={"/podcast-storage": volume})
+def remove_file(episode_file_path):
+    try:
+        volume.remove_file(episode_file_path)
+        volume.commit()
+        volume.reload()
+    except Exception as e:
+        print(f"An error occurred when removing file: {e}")
+
+@app.function(volumes={"/podcast-storage": volume}, schedule=modal.Cron("0 13,23 * * 1-5"))
 def main(podcast_feed_url = "https://www.spreaker.com/show/5725002/episodes/feed"):
 
     download_whisper_model.remote()
@@ -194,5 +203,4 @@ def main(podcast_feed_url = "https://www.spreaker.com/show/5725002/episodes/feed
     
     store_episode_data.remote(episode_title, TLDROutput, SummaryOutput, publish_date)
 
-    volume.remove_file(episode_file_path)
-    volume.reload()
+    remove_file.remote(episode_file_path)
