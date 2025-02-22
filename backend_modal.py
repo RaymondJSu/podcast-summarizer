@@ -31,16 +31,23 @@ volume = modal.Volume.from_name("podcast-storage", create_if_missing=True)
 def download_whisper_model():
     
     # Whisper model download path inside the container
-    model_path = "/podcast-storage/base.en"
+    model_path = "/podcast-storage/base.en.pt"
 
+    # 🔄 Ensure volume is reloaded first
+    volume.reload()
+    
     # Check if the model is already downloaded to avoid re-downloading
-    if not os.path.exists(model_path):
-        print("Downloading Whisper model...")
-        whisper._download(whisper._MODELS["base.en"], "/podcast-storage/", False)
-        volume.commit()
-        print("Whisper model downloaded.")
-    else:
+    if os.path.exists(model_path):
         print("Whisper model already exists.")
+        return
+
+    # If the model does not exist, download it
+    print("Downloading Whisper model...")
+    whisper._download(whisper._MODELS["base.en"], "/podcast-storage/", False)
+
+    # 🔄 Explicitly commit the volume again
+    volume.commit()
+    print("Whisper model downloaded.")
 
 @app.function(volumes={"/podcast-storage": volume})
 def get_episode_audio_url(podcast_feed_url):
@@ -66,7 +73,7 @@ def get_episode_audio_url(podcast_feed_url):
     print(f"Downloaded episode to: {episode_file_path}")
     
     # Check the contents of the directory
-    print("Contents of the folder:", os.listdir("/podcast-storage"))
+    #print("Contents of the folder:", os.listdir("/podcast-storage"))
 
     # Verify the file was downloaded
     if not os.path.exists(episode_file_path):
@@ -85,7 +92,7 @@ def transcribe(audio_file_path):
     print(f"Transcribing audio file from path: {audio_file_path}")
 
     # Check folder contents for debug
-    print("Contents of the folder:", os.listdir("/podcast-storage"))
+    #print("Contents of the folder:", os.listdir("/podcast-storage"))
     
     # Check if file exists
     if not os.path.exists(audio_file_path):
@@ -93,7 +100,7 @@ def transcribe(audio_file_path):
         return False
 
     # Load the Whisper model
-    model = whisper.load_model("base.en")
+    model = whisper.load_model("base.en.pt")
     try:
         # Run the transcription process
         result = model.transcribe(audio_file_path)
@@ -149,7 +156,7 @@ def generate_summary(transcript):
     SummaryOutput = SummaryOutput.choices[0].message.content
 
     print("Summary complete!")
-    print(TLDROutput)
+    #print(TLDROutput)
 
     return TLDROutput, SummaryOutput
 
@@ -182,9 +189,9 @@ def store_episode_data(episode_title, TLDROutput, SummaryOutput, publish_date):
 @app.function(volumes={"/podcast-storage": volume})
 def remove_file(episode_file_path):
     try:
+        volume.reload()
         volume.remove_file(episode_file_path)
         volume.commit()
-        volume.reload()
     except Exception as e:
         print(f"An error occurred when removing file: {e}")
 
