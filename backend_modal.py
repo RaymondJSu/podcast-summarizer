@@ -31,7 +31,7 @@ volume = modal.Volume.from_name("podcast-storage", create_if_missing=True)
 def download_whisper_model():
     
     # Whisper model download path inside the container
-    model_path = "/podcast-storage/base.en.pt"
+    model_path = "/podcast-storage/base.en"
 
     # 🔄 Ensure volume is reloaded first
     volume.reload()
@@ -100,7 +100,7 @@ def transcribe(audio_file_path):
         return False
 
     # Load the Whisper model
-    model = whisper.load_model("base.en.pt")
+    model = whisper.load_model("base.en")
     try:
         # Run the transcription process
         result = model.transcribe(audio_file_path)
