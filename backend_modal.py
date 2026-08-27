@@ -78,7 +78,7 @@ def generate_summary(transcript):
     if not transcript:
         return "No transcript", "No transcript"
 
-    print("Generating summary via Groq Llama 3.3...")
+    print("Generating summary via Groq GPT OSS 20B...")
     client = Groq(api_key=os.environ["GROQ_API_KEY"])
 
     instructPrompt = """
@@ -103,7 +103,7 @@ def generate_summary(transcript):
         Here's the transcript:
     """
 
-    model_name = "llama-3.1-8b-instant"
+    model_name = "openai/gpt-oss-20b"
 
     try:
         # Generate TLDR
