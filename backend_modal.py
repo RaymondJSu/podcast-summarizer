@@ -4,8 +4,11 @@ import requests
 import os
 import urllib
 import tempfile
+import hashlib
+import uuid
 from groq import Groq
 from pymongo import MongoClient
+from pymongo.errors import DuplicateKeyError
 from pymongo.server_api import ServerApi
 from pathlib import Path
 import datetime
@@ -26,30 +29,18 @@ app = modal.App(
     secrets=[
         modal.Secret.from_name("my-groq-secret"),
     ],
-    timeout=600 # 10 minutes timeout for long podcasts
+    timeout=600, # 10 minutes timeout for long podcasts
+    scaledown_window=2
 )
-def process_podcast(podcast_feed_url):
+def process_podcast(audio_url):
     """
     Downloads audio to temp storage, transcribes via Groq, 
-    and returns transcript + metadata.
+    and returns the transcript.
     """
-    print("Fetching podcast feed...")
-    podcast_feed = feedparser.parse(requests.get(podcast_feed_url, headers={'User-Agent': 'Mozilla/5.0'}).content)
-    
-    if not podcast_feed.entries:
-        print("No entries found in RSS feed.")
-        return None
-
-    episode_title = podcast_feed.entries[0].title
-    publish_date = podcast_feed.entries[0].published
-    audio_url = podcast_feed.entries[0].links[1].href
-
-    print(f"Processing episode: {episode_title}")
-    
     # Use tempfile to ensure the file is deleted automatically after the function ends
     with tempfile.NamedTemporaryFile(suffix=".mp3", delete=True) as temp_audio:
         print(f"Downloading audio to temporary storage...")
-        with requests.get(audio_url, stream=True) as r:
+        with requests.get(audio_url, stream=True, timeout=(10, 60)) as r:
             r.raise_for_status()
             for chunk in r.iter_content(chunk_size=8192):
                 temp_audio.write(chunk)
@@ -68,15 +59,15 @@ def process_podcast(podcast_feed_url):
                     response_format="text",
                 )
             print("Transcription complete!")
-            return transcription, episode_title, publish_date
+            return transcription
         except Exception as e:
             print(f"Transcription error: {e}")
-            return None
+            raise
 
-@app.function(secrets=[modal.Secret.from_name("my-groq-secret")])
+@app.function(secrets=[modal.Secret.from_name("my-groq-secret")], timeout=300, scaledown_window=2)
 def generate_summary(transcript):
     if not transcript:
-        return "No transcript", "No transcript"
+        raise ValueError("No transcript")
 
     print("Generating summary via Groq GPT OSS 20B...")
     client = Groq(api_key=os.environ["GROQ_API_KEY"])
@@ -124,24 +115,28 @@ def generate_summary(transcript):
             ]
         )
 
-        return tldr_response.choices[0].message.content, summary_response.choices[0].message.content
+        tldr = tldr_response.choices[0].message.content
+        summary = summary_response.choices[0].message.content
+        if not tldr or not tldr.strip() or not summary or not summary.strip():
+            raise ValueError("Empty summary response")
+        return tldr, summary
     except Exception as e:
         print(f"Summarization error: {e}")
-        return "Error generating summary", "Error generating summary"
+        raise
 
-@app.function(secrets=[modal.Secret.from_name("my-mongodb-secret")])
-def store_episode_data(episode_title, TLDROutput, SummaryOutput, publish_date):
-    try:
-        user = urllib.parse.quote_plus(os.environ["MONGO_USER"])
-        pwd = urllib.parse.quote_plus(os.environ["MONGO_PASSWORD"])
-        host = os.environ["MONGO_HOST"]
+def get_mongo_client():
+    user = urllib.parse.quote_plus(os.environ["MONGO_USER"])
+    pwd = urllib.parse.quote_plus(os.environ["MONGO_PASSWORD"])
+    host = os.environ["MONGO_HOST"]
+    uri = f"mongodb+srv://{user}:{pwd}@{host}/"
+    return MongoClient(uri, server_api=ServerApi("1"), serverSelectionTimeoutMS=10000)
 
-        uri = f"mongodb+srv://{user}:{pwd}@{host}/"
-        client = MongoClient(uri, server_api=ServerApi("1"))
-
-        db = client.podcast_summarizer
-        episodes = db.episodes
+@app.function(secrets=[modal.Secret.from_name("my-mongodb-secret")], timeout=60, scaledown_window=2)
+def store_episode_data(episode_id, podcast_feed_url, episode_title, TLDROutput, SummaryOutput, publish_date):
+    with get_mongo_client() as client:
+        episodes = client.podcast_summarizer.episodes
         episode_data = {
+            "feed_url": podcast_feed_url,
             "title": episode_title,
             "publish_date": publish_date,
             "TLDR": TLDROutput,
@@ -149,24 +144,74 @@ def store_episode_data(episode_title, TLDROutput, SummaryOutput, publish_date):
             "timestamp": datetime.datetime.now()
         }
 
-        episodes.insert_one(episode_data)
+        episodes.update_one({"_id": episode_id}, {"$setOnInsert": episode_data}, upsert=True)
         print(f"Successfully stored in MongoDB: {episode_title}")
-    except Exception as e:
-        print(f"MongoDB Error: {e}")
 
-@app.function(schedule=modal.Cron("0 13,23 * * 1-5"))
+@app.function(
+    schedule=modal.Cron("*/30 * * * *"),
+    secrets=[modal.Secret.from_name("my-mongodb-secret")],
+    timeout=1200,
+    max_containers=1,
+    scaledown_window=2
+)
 def main(podcast_feed_url = "https://www.spreaker.com/show/5725002/episodes/feed"):
-    # Step 1: Download & Transcribe (Automatic cleanup via tempfile)
-    result = process_podcast.remote(podcast_feed_url)
-    if not result:
+    response = requests.get(podcast_feed_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=30)
+    response.raise_for_status()
+    podcast_feed = feedparser.parse(response.content)
+    if not podcast_feed.entries:
+        print("No entries found in RSS feed.")
         return
-    transcript, episode_title, publish_date = result
 
-    # Step 2: Summarize
-    TLDROutput, SummaryOutput = generate_summary.remote(transcript)
-    
-    # Step 3: Store
-    store_episode_data.remote(episode_title, TLDROutput, SummaryOutput, publish_date)
+    # shortcut: only the latest entry is polled; add catch-up if multiple episodes arrive between polls.
+    episode = podcast_feed.entries[0]
+    audio_url = next((item.get("href") for item in episode.get("enclosures", []) if item.get("href")), None)
+    if not audio_url or not episode.get("title") or not episode.get("published"):
+        raise ValueError("Episode is missing audio, title, or publish date")
+    episode_title, publish_date = episode["title"], episode["published"]
+    identity = episode.get("id") or audio_url
+    episode_id = hashlib.sha256(f"{podcast_feed_url}\n{identity}".encode()).hexdigest()
+
+    with get_mongo_client() as client:
+        db = client.podcast_summarizer
+        invalid = [None, "", "No transcript", "Error generating summary"]
+        existing = db.episodes.find_one({
+            "$or": [
+                {"_id": episode_id},
+                {"title": episode_title, "publish_date": publish_date, "feed_url": {"$exists": False}}
+            ],
+            "TLDR": {"$nin": invalid}, "summary": {"$nin": invalid}
+        })
+        if existing:
+            print(f"Already summarized: {episode_title}")
+            return
+
+        now = datetime.datetime.now(datetime.timezone.utc)
+        token = uuid.uuid4().hex
+        try:
+            # MongoDB's unique _id makes claiming atomic, including overlapping invocations.
+            db.episode_jobs.find_one_and_update(
+                {"_id": episode_id, "$or": [
+                    {"status": "failed"},
+                    {"status": "processing", "lease_until": {"$lte": now}}
+                ]},
+                {"$set": {"status": "processing", "token": token,
+                          "lease_until": now + datetime.timedelta(hours=1)}},
+                upsert=True
+            )
+        except DuplicateKeyError:
+            print(f"Already claimed: {episode_title}")
+            return
+
+        claim = {"_id": episode_id, "token": token}
+        try:
+            transcript = process_podcast.remote(audio_url)
+            TLDROutput, SummaryOutput = generate_summary.remote(transcript)
+            store_episode_data.remote(episode_id, podcast_feed_url, episode_title,
+                                      TLDROutput, SummaryOutput, publish_date)
+            db.episode_jobs.update_one(claim, {"$set": {"status": "completed"}})
+        except Exception:
+            db.episode_jobs.update_one(claim, {"$set": {"status": "failed"}})
+            raise
 
 @app.local_entrypoint()
 def test_run(url=None):
