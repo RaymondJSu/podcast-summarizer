@@ -6,9 +6,10 @@ import urllib
 import tempfile
 import hashlib
 import uuid
+import time
 from groq import Groq
 from pymongo import MongoClient
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import AutoReconnect, DuplicateKeyError
 from pymongo.server_api import ServerApi
 from pathlib import Path
 import datetime
@@ -129,7 +130,7 @@ def get_mongo_client():
     pwd = urllib.parse.quote_plus(os.environ["MONGO_PASSWORD"])
     host = os.environ["MONGO_HOST"]
     uri = f"mongodb+srv://{user}:{pwd}@{host}/"
-    return MongoClient(uri, server_api=ServerApi("1"), serverSelectionTimeoutMS=10000)
+    return MongoClient(uri, server_api=ServerApi("1"), serverSelectionTimeoutMS=30000)
 
 @app.function(secrets=[modal.Secret.from_name("my-mongodb-secret")], timeout=60, scaledown_window=2)
 def store_episode_data(episode_id, podcast_feed_url, episode_title, TLDROutput, SummaryOutput, publish_date):
@@ -174,13 +175,21 @@ def main(podcast_feed_url = "https://www.spreaker.com/show/5725002/episodes/feed
     with get_mongo_client() as client:
         db = client.podcast_summarizer
         invalid = [None, "", "No transcript", "Error generating summary"]
-        existing = db.episodes.find_one({
-            "$or": [
-                {"_id": episode_id},
-                {"title": episode_title, "publish_date": publish_date, "feed_url": {"$exists": False}}
-            ],
-            "TLDR": {"$nin": invalid}, "summary": {"$nin": invalid}
-        })
+        for attempt in range(3):
+            try:
+                existing = db.episodes.find_one({
+                    "$or": [
+                        {"_id": episode_id},
+                        {"title": episode_title, "publish_date": publish_date, "feed_url": {"$exists": False}}
+                    ],
+                    "TLDR": {"$nin": invalid}, "summary": {"$nin": invalid}
+                })
+                break
+            except AutoReconnect:
+                if attempt == 2:
+                    raise
+                print(f"MongoDB temporarily unavailable; retrying episode lookup ({attempt + 1}/2).")
+                time.sleep(5 * (attempt + 1))
         if existing:
             print(f"Already summarized: {episode_title}")
             return

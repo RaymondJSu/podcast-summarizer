@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import backend_modal as backend
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import AutoReconnect, DuplicateKeyError, OperationFailure, ServerSelectionTimeoutError
 
 
 class PollingTests(unittest.TestCase):
@@ -78,6 +78,53 @@ class PollingTests(unittest.TestCase):
         # Assert
         self.transcribe.assert_not_called()
         self.store.assert_not_called()
+
+    def test_primary_recovers_before_lookup_without_reprocessing_existing_episode(self):
+        # Arrange
+        self.db.episodes.find_one.side_effect = [
+            ServerSelectionTimeoutError("No primary"), {"summary": "Already saved"}
+        ]
+        with patch("time.sleep") as sleep:
+            # Act
+            backend.main.local(self.feed_url)
+
+        # Assert
+        self.assertEqual((self.db.episodes.find_one.call_count, sleep.call_count), (2, 1))
+        self.transcribe.assert_not_called()
+        self.db.episode_jobs.find_one_and_update.assert_not_called()
+
+    def test_lookup_reconnects_without_repeating_transcription_or_storage(self):
+        # Arrange
+        self.db.episodes.find_one.side_effect = [AutoReconnect("Connection lost"), None]
+        with patch("time.sleep"):
+            # Act
+            backend.main.local(self.feed_url)
+
+        # Assert
+        self.transcribe.assert_called_once()
+        self.store.assert_called_once()
+
+    def test_persistent_primary_failure_still_raises_after_bounded_retries(self):
+        # Arrange
+        self.db.episodes.find_one.side_effect = ServerSelectionTimeoutError("No primary")
+        with patch("time.sleep") as sleep:
+            # Act / Assert
+            with self.assertRaises(ServerSelectionTimeoutError):
+                backend.main.local(self.feed_url)
+        self.assertEqual((self.db.episodes.find_one.call_count, sleep.call_count), (3, 2))
+        self.transcribe.assert_not_called()
+        self.db.episode_jobs.find_one_and_update.assert_not_called()
+
+    def test_database_permission_errors_are_not_retried(self):
+        # Arrange
+        self.db.episodes.find_one.side_effect = OperationFailure("Unauthorized", code=13)
+        with patch("time.sleep") as sleep:
+            # Act / Assert
+            with self.assertRaises(OperationFailure):
+                backend.main.local(self.feed_url)
+        self.db.episodes.find_one.assert_called_once()
+        sleep.assert_not_called()
+        self.transcribe.assert_not_called()
 
     def test_failures_release_claim_without_marking_completed(self):
         for stage in (self.transcribe, self.summarize, self.store):
